@@ -1,98 +1,79 @@
-trigger:
-  branches:
-    include:
+name: Terraform
+
+on:
+  push:
+    branches:
       - main
-      - feature/*
+      - 'features/**'
 
-pr:
-  branches:
-    include:
+  pull_request:
+    branches:
       - main
 
-pool:
-  vmImage: ubuntu-latest
+jobs:
 
-variables:
-  terraformVersion: '1.9.8'
-  workingDirectory: 'terraform'
-
-
-stages:
-
-# ============================================================
-# FEATURE BRANCH / PR - PLAN ONLY
-# ============================================================
-- stage: TerraformPlan
-  displayName: Terraform Plan
-  condition: |
-    or(
-      startsWith(variables['Build.SourceBranch'], 'refs/heads/feature/'),
-      eq(variables['Build.Reason'], 'PullRequest')
-    )
-
-  jobs:
-  - job: Plan
-    displayName: Terraform Plan
+  # ==========================================
+  # PLAN
+  # ==========================================
+  terraform-plan:
+    name: Terraform Plan
+    runs-on: ubuntu-latest
 
     steps:
-    - checkout: self
+      - name: Checkout
+        uses: actions/checkout@v4
 
-    - task: TerraformInstaller@1
-      displayName: Install Terraform
-      inputs:
-        terraformVersion: $(terraformVersion)
+      - name: Setup Terraform
+        uses: hashicorp/setup-terraform@v3
+        with:
+          terraform_version: 1.9.8
 
-    - script: terraform init
-      displayName: Terraform Init
-      workingDirectory: $(workingDirectory)
+      - name: Terraform Init
+        working-directory: terraform
+        run: terraform init
 
-    - script: terraform validate
-      displayName: Terraform Validate
-      workingDirectory: $(workingDirectory)
+      - name: Terraform Format
+        working-directory: terraform
+        run: terraform fmt -check -recursive
 
-    - script: terraform plan
-      displayName: Terraform Plan
-      workingDirectory: $(workingDirectory)
+      - name: Terraform Validate
+        working-directory: terraform
+        run: terraform validate
+
+      - name: Terraform Plan
+        working-directory: terraform
+        run: terraform plan
 
 
-# ============================================================
-# MAIN - APPLY AFTER PR MERGE
-# ============================================================
-- stage: TerraformApply
-  displayName: Terraform Apply
-  dependsOn: TerraformPlan
+  # ==========================================
+  # APPLY
+  # ONLY AFTER MERGE TO MAIN
+  # ==========================================
+  terraform-apply:
+    name: Terraform Apply
+    runs-on: ubuntu-latest
 
-  condition: |
-    and(
-      succeeded(),
-      eq(variables['Build.SourceBranch'], 'refs/heads/main')
-    )
+    if: >
+      github.event_name == 'push' &&
+      github.ref == 'refs/heads/main'
 
-  jobs:
-  - deployment: Apply
-    displayName: Terraform Apply
-    environment: terraform-prod
+    steps:
+      - name: Checkout
+        uses: actions/checkout@v4
 
-    strategy:
-      runOnce:
-        deploy:
-          steps:
+      - name: Setup Terraform
+        uses: hashicorp/setup-terraform@v3
+        with:
+          terraform_version: 1.9.8
 
-          - checkout: self
+      - name: Terraform Init
+        working-directory: terraform
+        run: terraform init
 
-          - task: TerraformInstaller@1
-            displayName: Install Terraform
-            inputs:
-              terraformVersion: $(terraformVersion)
+      - name: Terraform Plan
+        working-directory: terraform
+        run: terraform plan -out=tfplan
 
-          - script: terraform init
-            displayName: Terraform Init
-            workingDirectory: $(workingDirectory)
-
-          - script: terraform plan -out=tfplan
-            displayName: Terraform Plan
-            workingDirectory: $(workingDirectory)
-
-          - script: terraform apply -auto-approve tfplan
-            displayName: Terraform Apply
-            workingDirectory: $(workingDirectory)
+      - name: Terraform Apply
+        working-directory: terraform
+        run: terraform apply -auto-approve tfplan
