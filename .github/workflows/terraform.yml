@@ -51,10 +51,6 @@ jobs:
         working-directory: Environments/sandbox
         run: terraform plan -input=false -var-file="terraform.tfvars"
 
-
-  # =========================
-  # TERRAFORM APPLY
-  # =========================
   terraform-apply:
     name: Terraform Apply
     runs-on: ubuntu-latest
