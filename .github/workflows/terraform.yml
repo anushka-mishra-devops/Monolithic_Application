@@ -1,0 +1,98 @@
+trigger:
+  branches:
+    include:
+      - main
+      - feature/*
+
+pr:
+  branches:
+    include:
+      - main
+
+pool:
+  vmImage: ubuntu-latest
+
+variables:
+  terraformVersion: '1.9.8'
+  workingDirectory: 'terraform'
+
+
+stages:
+
+# ============================================================
+# FEATURE BRANCH / PR - PLAN ONLY
+# ============================================================
+- stage: TerraformPlan
+  displayName: Terraform Plan
+  condition: |
+    or(
+      startsWith(variables['Build.SourceBranch'], 'refs/heads/feature/'),
+      eq(variables['Build.Reason'], 'PullRequest')
+    )
+
+  jobs:
+  - job: Plan
+    displayName: Terraform Plan
+
+    steps:
+    - checkout: self
+
+    - task: TerraformInstaller@1
+      displayName: Install Terraform
+      inputs:
+        terraformVersion: $(terraformVersion)
+
+    - script: terraform init
+      displayName: Terraform Init
+      workingDirectory: $(workingDirectory)
+
+    - script: terraform validate
+      displayName: Terraform Validate
+      workingDirectory: $(workingDirectory)
+
+    - script: terraform plan
+      displayName: Terraform Plan
+      workingDirectory: $(workingDirectory)
+
+
+# ============================================================
+# MAIN - APPLY AFTER PR MERGE
+# ============================================================
+- stage: TerraformApply
+  displayName: Terraform Apply
+  dependsOn: TerraformPlan
+
+  condition: |
+    and(
+      succeeded(),
+      eq(variables['Build.SourceBranch'], 'refs/heads/main')
+    )
+
+  jobs:
+  - deployment: Apply
+    displayName: Terraform Apply
+    environment: terraform-prod
+
+    strategy:
+      runOnce:
+        deploy:
+          steps:
+
+          - checkout: self
+
+          - task: TerraformInstaller@1
+            displayName: Install Terraform
+            inputs:
+              terraformVersion: $(terraformVersion)
+
+          - script: terraform init
+            displayName: Terraform Init
+            workingDirectory: $(workingDirectory)
+
+          - script: terraform plan -out=tfplan
+            displayName: Terraform Plan
+            workingDirectory: $(workingDirectory)
+
+          - script: terraform apply -auto-approve tfplan
+            displayName: Terraform Apply
+            workingDirectory: $(workingDirectory)
